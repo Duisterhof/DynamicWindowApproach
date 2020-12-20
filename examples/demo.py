@@ -5,23 +5,22 @@ import time
 import numpy as np
 import cv2
 import dwa
+from numpy import random
+import imageio
 
 class Demo(object):
     def __init__(self):
-        # 1 px = 0.1 m
-        # That's why everything is multiplied or divided by 10.
         cv2.namedWindow('cvwindow')
         cv2.setMouseCallback('cvwindow', self.callback)
-        self.drawing = False
 
-        self.point_cloud = []
-        self.draw_points = []
+        # setting initial setting for vehicle and environment
+        self.reset() 
 
         # Planner Settings
         self.vel = (0.0, 0.0)
-        self.pose = (30.0, 30.0, 0)
+        self.pose = (-30.0, 30.0, 0)
         self.goal = None
-        self.base = [-3.0, -2.5, +3.0, +2.5]
+        self.base = [-1.5, -1.25, +1.5, +1.25]
         self.config = dwa.Config(
                 max_speed = 3.0,
                 min_speed = -1.0,
@@ -37,19 +36,39 @@ class Demo(object):
                 velocity = 1.0,
                 base = self.base)
 
+    # resets env and robot placement
+    def reset(self):
+        self.placed_robot = False
+        self.pose = (-30.0, 30.0, 0)
+        self.env_num = random.randint(100)
+        self.bin_map = imageio.imread('imgs/rand_env_'+str(self.env_num)+'.png')
+        bin_shape = np.shape(self.bin_map)
+        conversion_factor = 600./(bin_shape[0])
+
+        self.point_cloud = []
+        self.draw_points = []
+
+        for i in range(bin_shape[0]):
+            for j in range(bin_shape[1]):
+                if np.all(self.bin_map[i][j] == 255):
+                    self.point_cloud.append([j*conversion_factor/10,i*conversion_factor/10])
+                    self.draw_points.append([int(j*conversion_factor),int(i*conversion_factor)])
+
+        self.point_cloud = self.point_cloud[::3]
+        self.draw_points = self.draw_points[::3]
+
+        self.placed_robot = False
+        self.goal = None
+
+    # mouse callback
     def callback(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
-            self.drawing = True
-        elif event == cv2.EVENT_MOUSEMOVE:
-            if self.drawing:
-                if [x, y] not in self.draw_points:
-                    self.draw_points.append([x, y])
-                    self.point_cloud.append([x/10, y/10])
-                    self.goal = None
+            if not self.placed_robot:
+                self.pose = (x/10,y/10,0)
+                self.placed_robot = True
             else:
-                self.goal = (x/10, y/10)
-        elif event == cv2.EVENT_LBUTTONUP:
-            self.drawing = False
+                self.goal = (x/10,y/10)            
+
 
     def main(self):
         import argparse
@@ -63,8 +82,9 @@ class Demo(object):
         while True:
             prev_time = time.time()
             self.map = np.zeros((600, 600, 3), dtype=np.uint8)
-            for point in self.draw_points:
-                cv2.circle(self.map, tuple(point), 4, (255, 255, 255), -1)
+            self.scaled_bin = cv2.resize(self.bin_map,(600,600),interpolation=cv2.INTER_AREA)
+            self.map += self.scaled_bin
+
             if self.goal is not None:
                 cv2.circle(self.map, (int(self.goal[0]*10), int(self.goal[1]*10)),
                         4, (0, 255, 0), -1)
@@ -98,6 +118,13 @@ class Demo(object):
 
             cv2.putText(self.map, f'Point Cloud Size: {len(self.point_cloud)}',
                     (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            
+            if not self.placed_robot:
+                cv2.putText(self.map, f'Click to place robot.',
+                    (20, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            else:
+                cv2.putText(self.map, f'Click to place goal.',
+                    (20, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
             if args.save:
                 writer.append_data(self.map)
@@ -106,8 +133,7 @@ class Demo(object):
             if key == 27:
                 break
             elif key == ord('r'):
-                self.point_cloud = []
-                self.draw_points = []
+                self.reset()
         if args.save:
             writer.close()
 
