@@ -51,3 +51,10 @@ cd DynamicWindowApproach
 python3 setup.py install --user
 ```
 
+## Usage
+```bash
+cd examples
+python3 demo.py
+```
+
+
